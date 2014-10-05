@@ -335,7 +335,7 @@ namespace PRoConEvents
 			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
 
 			variables.Add(new CPluginVariable("Folder path, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), filePath));
-			variables.Add(new CPluginVariable("Log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), filePath));
+			variables.Add(new CPluginVariable("Log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), fileName));
 
 			variables.Add(new CPluginVariable("Admins|Add new admin", typeof(string), ""));
 
@@ -354,9 +354,9 @@ namespace PRoConEvents
 
 			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
 			variables.Add(new CPluginVariable("Folder path", typeof(string), filePath));
-			variables.Add(new CPluginVariable("Log-file name", typeof(string), filePath));
+			variables.Add(new CPluginVariable("Log-file name", typeof(string), fileName));
 			variables.Add(new CPluginVariable("Admins", typeof(string), admins.Aggregate((a1, a2) => a1 + "," + a2)));
-			
+
 			return variables;
 		}
 
@@ -364,27 +364,29 @@ namespace PRoConEvents
 		{
 			value = value.Trim();
 
-			if(variable.Contains("Debug")) {
-					debug = bool.Parse(value);
-			}
-			else if(variable.Contains("Folder path")) {
-					filePath = value.Replace('\\', '/').Trim();
-			}
-			else if(variable.Contains("Log-file name"))
+			if (variable.Contains("Debug"))
 			{
-					if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
-					{
-						ConsoleError("Invalid file name!");
-					}
-					else
-					{
-						fileName = value;
-					}
+				debug = bool.Parse(value);
 			}
-			else if(variable.Contains("Admins")) {// Re-reading saved admins
-					string[] adminArray = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-					admins.AddRange(adminArray);
-					admins.Sort();
+			else if (variable.Contains("Folder path"))
+			{
+				filePath = value.Replace('\\', '/').Trim();
+			}
+			else if (variable.Contains("Log-file name"))
+			{
+				if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+				{
+					ConsoleError("Invalid file name!");
+					return;
+				}
+
+				fileName = value;
+			}
+			else if (variable.Contains("Admins")) // Re-reading saved admins
+			{
+				string[] adminArray = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+				admins.AddRange(adminArray);
+				admins.Sort();
 			}
 			else if (variable.Contains("Add new admin"))
 			{
