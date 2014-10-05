@@ -15,9 +15,37 @@ namespace PRoConEvents
 		private bool pluginEnabled;
 		private bool debug = false;
 
+		private string filePath, fileName;
+
+		private Queue<PageAdminRecord> pageAdminQueue;
+		private List<string> admins;
+
+		private class PageAdminRecord
+		{
+			public DateTime time { get; set; }
+			public string player { get; set; }
+			public string message { get; set; }
+
+			public PageAdminRecord(DateTime time, string player, string message)
+			{
+				this.time = time;
+				this.player = player;
+				this.message = message;
+			}
+
+			public PageAdminRecord(PageAdminRecord r)
+			{
+				this.time = r.time;
+				this.player = r.player;
+				this.message = r.message;
+			}
+		}
+
 		public AdminActivityTracker()
 		{
-
+			filePath = fileName = "";
+			pageAdminQueue = new Queue<PageAdminRecord>();
+			admins = new List<string>();
 		}
 
 		#region Console Methods
@@ -258,7 +286,7 @@ namespace PRoConEvents
 
 		public string GetPluginVersion()
 		{
-			return "0.0.1";
+			return "0.0.3";
 		}
 
 		public string GetPluginAuthor()
@@ -275,13 +303,13 @@ namespace PRoConEvents
 		{
 			return @"<h1>" + GetPluginName() + @"</h1>
 
-<p>This is a sample description</p>
+<p>Keeps track of all !pageadmin requests and responses.</p>
 ";
 		}
 
 		public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
 		{
-			this.RegisterEvents(this.GetType().Name, "OnGlobalChat", "OnTeamChat", "OnSquadChat");
+			this.RegisterEvents(this.GetType().Name, "OnGlobalChat", "OnTeamChat", "OnSquadChat", "OnPlayerChat");
 		}
 
 		public void OnPluginEnable()
@@ -306,29 +334,131 @@ namespace PRoConEvents
 
 			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
 
+			variables.Add(new CPluginVariable("Folder path, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), filePath));
+			variables.Add(new CPluginVariable("Log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), filePath));
+
+			variables.Add(new CPluginVariable("Admins|Add new admin", typeof(string), ""));
+
+			int count = 0;
+			foreach (string admin in admins)
+			{
+				variables.Add(new CPluginVariable((++count).ToString(), typeof(string), admin));
+			}
+
 			return variables;
 		}
 
 		public List<CPluginVariable> GetPluginVariables()
 		{
-			return GetDisplayPluginVariables();
+			List<CPluginVariable> variables = new List<CPluginVariable>();
+
+			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
+			variables.Add(new CPluginVariable("Folder path", typeof(string), filePath));
+			variables.Add(new CPluginVariable("Log-file name", typeof(string), filePath));
+			variables.Add(new CPluginVariable("Admins", typeof(string), admins.Aggregate((a1, a2) => a1 + "," + a2)));
+			
+			return variables;
 		}
 
 		public void SetPluginVariable(string variable, string value)
 		{
-			if (variable.Equals("Debug"))
-				debug = bool.Parse(value);
+			value = value.Trim();
+
+			switch (variable)
+			{
+				case "Debug":
+					debug = bool.Parse(value);
+					break;
+				case "Folder path":
+					filePath = value.Replace('\\', '/').Trim();
+					break;
+				case "Log-file name":
+					if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+					{
+						ConsoleError("Invalid file name!");
+					}
+					else
+					{
+						fileName = value;
+					}
+
+					break;
+				case "Admins": // Re-reading saved admins
+					string[] adminArray = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+					admins.AddRange(adminArray);
+					admins.Sort();
+					break;
+				case "Add new admin":
+					if (value != "")
+					{
+						admins.Add(value);
+						admins.Sort();
+					}
+					break;
+				default:
+					int index;
+					if (!int.TryParse(variable, out index))
+					{
+						ConsoleError("Impossible error!");
+						return;
+					}
+
+					index--;
+
+					if (value == "")
+					{
+						admins.RemoveAt(index);
+					}
+					else
+					{
+						admins[index] = value;
+						admins.Sort();
+					}
+
+					break;
+			}
+		}
+
+		public override void OnServerMessage(string serverMessage)
+		{
+			OnGlobalChat("SERVER MESSAGE", serverMessage);
 		}
 
 		public override void OnGlobalChat(string speaker, string message)
 		{
+			ConsoleWrite(speaker + ": " + message);
+
+			message = message.Trim();
+
 			if (speaker.Equals("Server"))
 			{
+				int colon = message.IndexOf(':'); // Get PRoCon account name
 
+				if (colon == -1) // Plugin sent message
+					return;
+
+				speaker = message.Substring(0, colon).Trim();
+
+				if (speaker.Contains(' '))
+					return;
 			}
-			else
-			{
+			
+			if (message[0] == '/')
+				message = message.Substring(1);
 
+			if (message.ToLower().StartsWith("!pageadmin "))
+			{
+				message = message.Substring("!pageadmin ".Length).Trim();
+
+				ConsoleDebug("!pageadmin request: " + speaker + " - " + message);
+
+				recordToLog(speaker, message);
+			}
+			else if (admins.Contains(speaker) && pageAdminQueue.Count > 0)
+			{
+				ConsoleDebug("Admin response: " + speaker + " - " + message);
+
+				markResponse(speaker, message);
 			}
 		}
 
@@ -340,6 +470,39 @@ namespace PRoConEvents
 		public override void OnSquadChat(string speaker, string message, int teamId, int squadId)
 		{
 			OnGlobalChat(speaker, message);
+		}
+
+		public override void OnPlayerChat(string speaker, string message, string targetPlayer)
+		{
+			OnGlobalChat(speaker, message);
+		}
+
+		private void recordToLog(string speaker, string message)
+		{
+			if (filePath == "" || fileName == "")
+			{
+				ConsoleDebug("Missed !pageadmin request: " + speaker + " - " + message);
+				return;
+			}
+
+			PageAdminRecord record = new PageAdminRecord(DateTime.Now, speaker, message);
+			pageAdminQueue.Enqueue(record);
+			
+
+		}
+
+		private void markResponse(string speaker, string message)
+		{
+			if (filePath == "" || fileName == "")
+			{
+				ConsoleDebug("Missed admin response: " + speaker + " - " + message);
+				return;
+			}
+
+			foreach (PageAdminRecord record in pageAdminQueue)
+			{
+				ConsoleDebug("PageAdminRecord: " + record.time + " - " + record.player + ": " + record.message);
+			}
 		}
 	}
 }

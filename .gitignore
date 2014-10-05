@@ -1,0 +1,6 @@
+*.sln
+*.suo
+*.csproj
+AdminActivityTracker/bin/
+AdminActivityTracker/obj/
+AdminActivityTracker/Properties/
