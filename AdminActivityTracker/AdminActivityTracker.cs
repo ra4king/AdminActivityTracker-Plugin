@@ -342,7 +342,7 @@ namespace PRoConEvents
 			int count = 0;
 			foreach (string admin in admins)
 			{
-				variables.Add(new CPluginVariable((++count).ToString(), typeof(string), admin));
+				variables.Add(new CPluginVariable("Admins|" + (++count).ToString(), typeof(string), admin));
 			}
 
 			return variables;
