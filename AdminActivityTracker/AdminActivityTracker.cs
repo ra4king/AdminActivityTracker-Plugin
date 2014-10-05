@@ -13,7 +13,7 @@ namespace PRoConEvents
 	class AdminActivityTracker : PRoConPluginAPI, IPRoConPluginInterface
 	{
 		private bool pluginEnabled;
-		private bool debug = false;
+		private bool debug = true;
 
 		private string filePath, fileName;
 
@@ -475,6 +475,15 @@ namespace PRoConEvents
 		public override void OnPlayerChat(string speaker, string message, string targetPlayer)
 		{
 			OnGlobalChat(speaker, message);
+		}
+
+		private String configure(String path)
+		{
+			string monthName = "";
+			int monthNumber = 0;
+			int year = 0;
+
+			return String.Format(path, monthName, monthNumber, year);
 		}
 
 		private void recordToLog(string speaker, string message)
