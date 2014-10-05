@@ -286,7 +286,7 @@ namespace PRoConEvents
 
 		public string GetPluginVersion()
 		{
-			return "0.0.3";
+			return "0.1.0";
 		}
 
 		public string GetPluginAuthor()
@@ -364,15 +364,14 @@ namespace PRoConEvents
 		{
 			value = value.Trim();
 
-			switch (variable)
-			{
-				case "Debug":
+			if(variable.Contains("Debug")) {
 					debug = bool.Parse(value);
-					break;
-				case "Folder path":
+			}
+			else if(variable.Contains("Folder path")) {
 					filePath = value.Replace('\\', '/').Trim();
-					break;
-				case "Log-file name":
+			}
+			else if(variable.Contains("Log-file name"))
+			{
 					if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
 					{
 						ConsoleError("Invalid file name!");
@@ -381,41 +380,40 @@ namespace PRoConEvents
 					{
 						fileName = value;
 					}
-
-					break;
-				case "Admins": // Re-reading saved admins
+			}
+			else if(variable.Contains("Admins")) {// Re-reading saved admins
 					string[] adminArray = value.Split(new char[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
 					admins.AddRange(adminArray);
 					admins.Sort();
-					break;
-				case "Add new admin":
-					if (value != "")
-					{
-						admins.Add(value);
-						admins.Sort();
-					}
-					break;
-				default:
-					int index;
-					if (!int.TryParse(variable, out index))
-					{
-						ConsoleError("Impossible error!");
-						return;
-					}
+			}
+			else if (variable.Contains("Add new admin"))
+			{
+				if (value != "")
+				{
+					admins.Add(value);
+					admins.Sort();
+				}
+			}
+			else
+			{
+				int index;
+				if (!int.TryParse(variable, out index))
+				{
+					ConsoleError("Impossible error!");
+					return;
+				}
 
-					index--;
+				index--;
 
-					if (value == "")
-					{
-						admins.RemoveAt(index);
-					}
-					else
-					{
-						admins[index] = value;
-						admins.Sort();
-					}
-
-					break;
+				if (value == "")
+				{
+					admins.RemoveAt(index);
+				}
+				else
+				{
+					admins[index] = value;
+					admins.Sort();
+				}
 			}
 		}
 
