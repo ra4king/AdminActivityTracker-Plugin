@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -15,7 +16,11 @@ namespace PRoConEvents
 		private bool pluginEnabled;
 		private bool debug = true;
 
-		private string filePath, fileName;
+		private CServerInfo serverInfo;
+		private string requestsFilePath, requestsFileName;
+		private string responsesFilePath, responsesFileName;
+
+		private double failTime;
 
 		private Queue<PageAdminRecord> pageAdminQueue;
 		private List<string> admins;
@@ -43,7 +48,10 @@ namespace PRoConEvents
 
 		public AdminActivityTracker()
 		{
-			filePath = fileName = "";
+			requestsFilePath = requestsFileName = "";
+			responsesFilePath = responsesFileName = "";
+			failTime = 30.0;
+
 			pageAdminQueue = new Queue<PageAdminRecord>();
 			admins = new List<string>();
 		}
@@ -286,7 +294,7 @@ namespace PRoConEvents
 
 		public string GetPluginVersion()
 		{
-			return "0.1.0";
+			return "0.2.0";
 		}
 
 		public string GetPluginAuthor()
@@ -309,7 +317,7 @@ namespace PRoConEvents
 
 		public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
 		{
-			this.RegisterEvents(this.GetType().Name, "OnGlobalChat", "OnTeamChat", "OnSquadChat", "OnPlayerChat");
+			this.RegisterEvents(this.GetType().Name, "OnGlobalChat", "OnTeamChat", "OnSquadChat", "OnPlayerChat", "OnServerInfo");
 		}
 
 		public void OnPluginEnable()
@@ -334,8 +342,13 @@ namespace PRoConEvents
 
 			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
 
-			variables.Add(new CPluginVariable("Folder path, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), filePath));
-			variables.Add(new CPluginVariable("Log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), fileName));
+			variables.Add(new CPluginVariable("Requests folder path, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), requestsFilePath));
+			variables.Add(new CPluginVariable("Requests log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), requestsFileName));
+
+			variables.Add(new CPluginVariable("Responses folder path, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), responsesFilePath));
+			variables.Add(new CPluginVariable("Responses log-file name, replacements: {0} = month name, {1} = month number, {2} = year", typeof(string), responsesFileName));
+
+			variables.Add(new CPluginVariable("Fail time", typeof(int), failTime));
 
 			variables.Add(new CPluginVariable("Admins|Add new admin", typeof(string), ""));
 
@@ -353,8 +366,11 @@ namespace PRoConEvents
 			List<CPluginVariable> variables = new List<CPluginVariable>();
 
 			variables.Add(new CPluginVariable("Debug", typeof(bool), debug));
-			variables.Add(new CPluginVariable("Folder path", typeof(string), filePath));
-			variables.Add(new CPluginVariable("Log-file name", typeof(string), fileName));
+			variables.Add(new CPluginVariable("Requests folder path", typeof(string), requestsFilePath));
+			variables.Add(new CPluginVariable("Requests log-file name", typeof(string), requestsFileName));
+			variables.Add(new CPluginVariable("Responses folder path", typeof(string), responsesFilePath));
+			variables.Add(new CPluginVariable("Responses log-file name", typeof(string), responsesFileName));
+			variables.Add(new CPluginVariable("Fail time", typeof(int), failTime));
 			variables.Add(new CPluginVariable("Admins", typeof(string), admins.Aggregate((a1, a2) => a1 + "," + a2)));
 
 			return variables;
@@ -368,11 +384,11 @@ namespace PRoConEvents
 			{
 				debug = bool.Parse(value);
 			}
-			else if (variable.Contains("Folder path"))
+			else if (variable.Contains("Requests folder path"))
 			{
-				filePath = value.Replace('\\', '/').Trim();
+				requestsFilePath = value.Replace('\\', '/').Trim();
 			}
-			else if (variable.Contains("Log-file name"))
+			else if (variable.Contains("Requests log-file name"))
 			{
 				if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
 				{
@@ -380,7 +396,25 @@ namespace PRoConEvents
 					return;
 				}
 
-				fileName = value;
+				requestsFileName = value;
+			}
+			else if (variable.Contains("Responses folder path"))
+			{
+				responsesFilePath = value.Replace('\\', '/').Trim();
+			}
+			else if (variable.Contains("Responses log-file name"))
+			{
+				if (value.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+				{
+					ConsoleError("Invalid file name!");
+					return;
+				}
+
+				responsesFileName = value;
+			}
+			else if (variable.Contains("Fail time"))
+			{
+				failTime = int.Parse(value);
 			}
 			else if (variable.Contains("Admins")) // Re-reading saved admins
 			{
@@ -477,18 +511,23 @@ namespace PRoConEvents
 			OnGlobalChat(speaker, message);
 		}
 
-		private String configure(String path)
+		public override void OnServerInfo(CServerInfo serverInfo)
+		{
+			this.serverInfo = serverInfo;
+		}
+
+		private String configure(String s)
 		{
 			string monthName = "";
 			int monthNumber = 0;
 			int year = 0;
 
-			return String.Format(path, monthName, monthNumber, year);
+			return String.Format(s, monthName, monthNumber, year);
 		}
 
 		private void recordToLog(string speaker, string message)
 		{
-			if (filePath == "" || fileName == "")
+			if (requestsFilePath == "" || requestsFileName == "")
 			{
 				ConsoleDebug("Missed !pageadmin request: " + speaker + " - " + message);
 				return;
@@ -496,22 +535,81 @@ namespace PRoConEvents
 
 			PageAdminRecord record = new PageAdminRecord(DateTime.Now, speaker, message);
 			pageAdminQueue.Enqueue(record);
-			
 
+			using(StreamWriter writer = new StreamWriter(configure(requestsFilePath) + configure(requestsFileName), true)) {
+				string output = speaker + ": '" + message + "'";
+
+				if (serverInfo == null)
+				{
+					writer.WriteLine(output + "; No Server Info");
+				}
+				else
+				{
+					string map = serverInfo.Map;
+					string gameMode = serverInfo.GameMode;
+					int playerCount = serverInfo.PlayerCount;
+					int maxPlayerCount = serverInfo.MaxPlayerCount;
+
+					writer.WriteLine(output + "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")");
+				}
+			}
 		}
 
 		private void markResponse(string speaker, string message)
 		{
-			if (filePath == "" || fileName == "")
+			if (responsesFilePath == "" || responsesFileName == "")
 			{
 				ConsoleDebug("Missed admin response: " + speaker + " - " + message);
 				return;
 			}
 
-			foreach (PageAdminRecord record in pageAdminQueue)
+			using (StreamWriter writer = new StreamWriter(configure(responsesFilePath) + configure(responsesFileName), true))
 			{
-				ConsoleDebug("PageAdminRecord: " + record.time + " - " + record.player + ": " + record.message);
+				foreach (PageAdminRecord record in pageAdminQueue)
+				{
+					ConsoleDebug("PageAdminRecord: " + record.time + " - " + record.player + ": " + record.message);
+
+					string requester = record.player;
+					string request = record.message;
+
+					TimeSpan timePassed = DateTime.Now - record.time;
+
+					if (timePassed.TotalMinutes >= failTime)
+					{
+						writer.WriteLine("Failed request, elapsed time > " + failTime + " minutes; Request: " + requester + ": '" + request + "'");
+						return;
+					}
+
+					string output = "Response Time: " + formatTime((int)Math.Round(timePassed.TotalSeconds)) + "; " + speaker + ": '" + message + "'; Request - " + requester + ": '" + request + "'";
+
+					if (serverInfo == null)
+					{
+						writer.WriteLine(output + "; No Server Info");
+					}
+					else
+					{
+						string map = serverInfo.Map;
+						string gameMode = serverInfo.GameMode;
+						int playerCount = serverInfo.PlayerCount;
+						int maxPlayerCount = serverInfo.MaxPlayerCount;
+
+						writer.WriteLine(output + "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")");
+					}
+				}
 			}
+		}
+
+		private static string formatTime(int seconds)
+		{
+			if (seconds < 0)
+			{
+				//ConsoleError("formatTime: SECONDS IS NEGATIVE");
+				return "";
+			}
+
+			int minutes = seconds / 60;
+			seconds %= 60;
+			return (minutes > 0 ? minutes + " minute" + (minutes == 0 || minutes > 1 ? "s" : "") : "") + (seconds > 0 || minutes == 0 ? (minutes > 0 ? " and " : "") + seconds + " second" + (seconds == 0 || seconds > 1 ? "s" : "") : "");
 		}
 	}
 }
