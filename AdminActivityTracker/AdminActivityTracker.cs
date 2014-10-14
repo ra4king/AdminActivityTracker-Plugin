@@ -294,7 +294,7 @@ namespace PRoConEvents
 
 		public string GetPluginVersion()
 		{
-			return "0.2.0";
+			return "0.2.1";
 		}
 
 		public string GetPluginAuthor()
@@ -387,6 +387,8 @@ namespace PRoConEvents
 			else if (variable.Contains("Requests folder path"))
 			{
 				requestsFilePath = value.Replace('\\', '/').Trim();
+				if (!requestsFilePath.EndsWith("/"))
+					requestsFilePath += '/';
 			}
 			else if (variable.Contains("Requests log-file name"))
 			{
@@ -401,6 +403,8 @@ namespace PRoConEvents
 			else if (variable.Contains("Responses folder path"))
 			{
 				responsesFilePath = value.Replace('\\', '/').Trim();
+				if (!responsesFilePath.EndsWith("/"))
+					responsesFilePath += '/';
 			}
 			else if (variable.Contains("Responses log-file name"))
 			{
@@ -460,8 +464,6 @@ namespace PRoConEvents
 
 		public override void OnGlobalChat(string speaker, string message)
 		{
-			ConsoleWrite(speaker + ": " + message);
-
 			message = message.Trim();
 
 			if (speaker.Equals("Server"))
@@ -516,11 +518,15 @@ namespace PRoConEvents
 			this.serverInfo = serverInfo;
 		}
 
+		private readonly string[] months = new string[] { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+
 		private String configure(String s)
 		{
-			string monthName = "";
-			int monthNumber = 0;
-			int year = 0;
+			DateTime now = DateTime.Now;
+
+			int monthNumber = now.Month;
+			string monthName = months[monthNumber - 1];
+			int year = now.Year;
 
 			return String.Format(s, monthName, monthNumber, year);
 		}
@@ -536,22 +542,34 @@ namespace PRoConEvents
 			PageAdminRecord record = new PageAdminRecord(DateTime.Now, speaker, message);
 			pageAdminQueue.Enqueue(record);
 
-			using(StreamWriter writer = new StreamWriter(configure(requestsFilePath) + configure(requestsFileName), true)) {
-				string output = speaker + ": '" + message + "'";
-
-				if (serverInfo == null)
+			string fileOutput = configure(requestsFilePath) + configure(requestsFileName);
+			try
+			{
+				using (StreamWriter writer = new StreamWriter(fileOutput, true))
 				{
-					writer.WriteLine(output + "; No Server Info");
-				}
-				else
-				{
-					string map = serverInfo.Map;
-					string gameMode = serverInfo.GameMode;
-					int playerCount = serverInfo.PlayerCount;
-					int maxPlayerCount = serverInfo.MaxPlayerCount;
+					string output = speaker + ": '" + message + "'";
 
-					writer.WriteLine(output + "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")");
+					if (serverInfo == null)
+					{
+						output += "; No Server Info";
+					}
+					else
+					{
+						string map = serverInfo.Map;
+						string gameMode = serverInfo.GameMode;
+						int playerCount = serverInfo.PlayerCount;
+						int maxPlayerCount = serverInfo.MaxPlayerCount;
+
+						output += "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")";
+					}
+
+					ConsoleDebug("Requests Log Output (" + fileOutput + "): " + output);
+					writer.WriteLine(output);
 				}
+			}
+			catch (Exception e)
+			{
+				ConsoleError(e.Message + "\n" + e.StackTrace);
 			}
 		}
 
@@ -563,47 +581,65 @@ namespace PRoConEvents
 				return;
 			}
 
-			using (StreamWriter writer = new StreamWriter(configure(responsesFilePath) + configure(responsesFileName), true))
+			string fileOutput = configure(responsesFilePath) + configure(responsesFileName);
+
+			try
 			{
-				foreach (PageAdminRecord record in pageAdminQueue)
+				using (StreamWriter writer = new StreamWriter(fileOutput, true))
 				{
-					ConsoleDebug("PageAdminRecord: " + record.time + " - " + record.player + ": " + record.message);
-
-					string requester = record.player;
-					string request = record.message;
-
-					TimeSpan timePassed = DateTime.Now - record.time;
-
-					if (timePassed.TotalMinutes >= failTime)
+					foreach (PageAdminRecord record in pageAdminQueue)
 					{
-						writer.WriteLine("Failed request, elapsed time > " + failTime + " minutes; Request: " + requester + ": '" + request + "'");
-						return;
+						ConsoleDebug("PageAdminRecord: " + record.time + " - " + record.player + ": " + record.message);
+
+						string requester = record.player;
+						string request = record.message;
+
+						TimeSpan timePassed = DateTime.Now - record.time;
+
+						string output;
+
+						if (timePassed.TotalMinutes >= failTime)
+						{
+							output = "Failed request, elapsed time > " + failTime + " minutes; Request: " + requester + ": '" + request + "'";
+						}
+						else
+						{
+							output = "Response Time: " + formatTime((int)Math.Round(timePassed.TotalSeconds)) + "; " + speaker + ": '" + message + "'; Request - " + requester + ": '" + request + "'";
+
+							if (serverInfo == null)
+							{
+								output += "; No Server Info";
+							}
+							else
+							{
+								string map = serverInfo.Map;
+								string gameMode = serverInfo.GameMode;
+								int playerCount = serverInfo.PlayerCount;
+								int maxPlayerCount = serverInfo.MaxPlayerCount;
+
+								output += "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")";
+							}
+						}
+
+						ConsoleDebug("Responses Log Output (" + fileOutput + "): " + output);
+						writer.WriteLine(output);
 					}
 
-					string output = "Response Time: " + formatTime((int)Math.Round(timePassed.TotalSeconds)) + "; " + speaker + ": '" + message + "'; Request - " + requester + ": '" + request + "'";
-
-					if (serverInfo == null)
-					{
-						writer.WriteLine(output + "; No Server Info");
-					}
-					else
-					{
-						string map = serverInfo.Map;
-						string gameMode = serverInfo.GameMode;
-						int playerCount = serverInfo.PlayerCount;
-						int maxPlayerCount = serverInfo.MaxPlayerCount;
-
-						writer.WriteLine(output + "; Round: " + gameMode + " on " + map + " (" + playerCount + "/" + maxPlayerCount + ")");
-					}
+					ConsoleDebug("PageAdminQueue count: " + pageAdminQueue.Count);
+					pageAdminQueue.Clear();
 				}
+			}
+			catch (Exception e)
+			{
+				ConsoleError(e.Message + "\n" + e.StackTrace);
 			}
 		}
 
-		private static string formatTime(int seconds)
+		private string formatTime(int seconds)
 		{
 			if (seconds < 0)
 			{
-				//ConsoleError("formatTime: SECONDS IS NEGATIVE");
+				ConsoleError("formatTime: SECONDS IS NEGATIVE");
 				return "";
 			}
 
