@@ -294,7 +294,7 @@ namespace PRoConEvents
 
 		public string GetPluginVersion()
 		{
-			return "0.2.1";
+			return "1.0.0";
 		}
 
 		public string GetPluginAuthor()
@@ -312,6 +312,8 @@ namespace PRoConEvents
 			return @"<h1>" + GetPluginName() + @"</h1>
 
 <p>Keeps track of all !pageadmin requests and responses.</p>
+
+<p>Admins are sorted alphabetically automatically. To clear out an admin, simply clear their text field.</p>
 ";
 		}
 
@@ -625,7 +627,6 @@ namespace PRoConEvents
 						writer.WriteLine(output);
 					}
 
-					ConsoleDebug("PageAdminQueue count: " + pageAdminQueue.Count);
 					pageAdminQueue.Clear();
 				}
 			}
